@@ -7,36 +7,48 @@ import json
 import itertools
 import time,datetime
 import sys
+from CRYPTOCOINORDER import CRYPTOCOINORDER
 
 class TRIARB:
-    def __init__(self, currency_list, per_transaction_fee, exchange):
+    def __init__(self, currency_list, per_transaction_fee, exchange,mode='analyze',secret_key=None,API_key=None):
         self.currency_list = currency_list
         self.per_transacation_fee = per_transaction_fee
         self.fee_rate = self.get_fee_rate()
         self.exchange = exchange
+        self.mode = mode
 
         self.exchange_rate_cache = {}
         #print(self.get_profitability_of_trades_at_intervals('gdax', 120, 5, 10000))
-        print(self.get_profitability_of_trades_at_intervals(exchange, 120, 5, 10000))
+        #self.trade_quantity_in_bitcoin = .0001608
+        #self.trade_quantity_in_bitcoin = .0002670
+        #self.trade_quantity_in_bitcoin = .0002
+        self.trade_quantity_in_LTC = .01
+
+
+        if mode == 'run':
+            self.cryptocoinorder = CRYPTOCOINORDER(exchange,secret_key,API_key)
+        print(self.get_profitability_of_trades_at_intervals(exchange, 240, 5, 10000))
 
     def get_profitability_of_trades_at_intervals(self, site, duration_seconds, interval_seconds, starting_value):
         value = starting_value
         for i in range(int(duration_seconds/interval_seconds)):
-            trade_result = self.get_maximum_avisable_trade_permutation(site)
+            trade_result = self.get_maximum_advisable_trade_permutation(site)
             if trade_result[1] != None:
                 value *= (trade_result[0] - self.fee_rate)
+                if self.mode == 'run':
+                    self.perform_triple_trade(self.exchange,trade_result[1])
             print(datetime.datetime.now())
             time.sleep(interval_seconds)
             #flush cash after every check
             self.exchange_rate_cache = {}
         return value
 
-    def get_maximum_avisable_trade_permutation(self,site):
+    def get_maximum_advisable_trade_permutation(self, site):
         max_rate,max_permutation = 0,None
         for permutation in itertools.permutations(self.currency_list):
             try:
                 profit_rate = self.get_trade_profit(site,permutation)
-                print('Analyzed profit rate for permutation:' + ','.join([str(currency) for currency in permutation]) + ' is: ' + str(profit_rate))
+                #print('Analyzed profit rate for permutation:' + ','.join([str(currency) for currency in permutation]) + ' is: ' + str(profit_rate))
                 if self.is_trade_advisable(self.fee_rate,profit_rate) and profit_rate > max_rate:
                     max_rate,max_permutation = profit_rate,permutation
                     print ('Most profitable transaction is: ' + str(profit_rate) + ' for: ' + ','.join([currency for currency in max_permutation]))
@@ -44,6 +56,20 @@ class TRIARB:
                 print('I could not process the arbitrage calculation for: ' + permutation)
         return (max_rate,max_permutation)
 
+    def perform_trade(self,currency,other_currency):
+        #quantity = self.trade_quantity_in_bitcoin if currency == 'BTC' else self.trade_quantity_in_bitcoin * self.get_exchange_rate_from_binance('BTC', currency)
+        quantity = self.trade_quantity_in_LTC if currency == 'LTC' else self.trade_quantity_in_LTC * self.get_exchange_rate_from_binance(
+            'LTC', currency)
+        #print('currency:' + currency)
+        #print('exchange rate: ' + str(self.get_exchange_rate_from_binance('BTC', currency)))
+        #print('quantity:' + str(quantity))
+        self.cryptocoinorder.do_binance_conversion(currency, other_currency, quantity, self.get_exchange_rate_from_binance(currency,other_currency))
+
+
+    def perform_triple_trade(self,exchange,currency_ordered_list):
+        for i in range(len(currency_ordered_list)-1):
+            self.perform_trade(currency_ordered_list[i],currency_ordered_list[i+1])
+        self.perform_trade(currency_ordered_list[-1], currency_ordered_list[0])
 
     def get_fee_rate(self):
         return (len(self.currency_list) -0) * self.per_transacation_fee
@@ -115,20 +141,20 @@ class TRIARB:
 
 
 def Main():
-    if len(sys.argv) != 4:
-        print ('Usage: python TRIARB.py coin-abbreviations fee exchange')
+    if len(sys.argv) != 4 and len(sys.argv) != 6:
+        print ('Usage for showing analysis: python TRIARB.py coin-abbreviations fee exchange')
+        print('or to run triangle arbitrage: python TRIARB.py coin-abbreviations fee exchange private-key api-key')
         return
-    #print('Please enter a comma delimited list of coin abbreviations to use:')
-    #coins = input().split(',')
     coins = sys.argv[1].split(',')
-    #print('Please enter the per transaction fee in decimal form. I.e. 5.23% = 0.0523')
-    #fee_rate = float(input())
     fee_rate = float(sys.argv[2])
-    #print('Please enter the exchange to use (binance,gdax)')
-    #exchange = input()
     exchange = sys.argv[3]
     #triarb = TRIARB(['BTC','LTC','ETH'],.0025,'binance')
-    triarb = TRIARB(coins, fee_rate,exchange)
+    if len(sys.argv) == 4:
+        triarb = TRIARB(coins, fee_rate,exchange)
+    else:
+        secret_key = sys.argv[4]
+        API_key = sys.argv[5]
+        triarb = TRIARB(coins, fee_rate, exchange,'run',secret_key,API_key)
 
 if __name__ == '__main__':
     Main()
